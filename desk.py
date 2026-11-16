@@ -23,7 +23,9 @@ from core import config, log, platform_win
 from core.clock import FrameClock
 from core.updater import Updater, install_and_restart, is_frozen
 from ui import theme
+from model.widget import Widget, demo_widget
 from ui.app_windows import SettingsWindow, UpdateDialog
+from ui.host import WidgetHost
 
 SERVER_NAME = "WidgetDesk_single_instance"
 
@@ -40,6 +42,15 @@ class App(QObject):
         self.upd_dlg = None
         self.upd_manual = False
         self.upd_url = ""
+
+        self.hosts = []
+        self.widgets = [Widget(d) for d in self.st.get("widgets", []) if isinstance(d, dict)]
+        if not self.widgets and not self.st.get("seen_demo"):
+            self.widgets.append(demo_widget())           # перший запуск: один віджет для прикладу
+        self.st["seen_demo"] = True
+        for wd in self.widgets:
+            self.clamp_to_screen(wd)
+            self._add_host(wd)
 
         self.tray = QSystemTrayIcon(theme.app_icon(), self)
         self.tray.setToolTip(f"WidgetDesk {VERSION}")
@@ -79,7 +90,9 @@ class App(QObject):
             a.triggered.connect(lambda _=False: fn())
             m.addAction(a)
 
-        add("Режим редагування", self.toggle_edit, self.st.get("edit_mode"))
+        add("Режим редагування (рухати віджети)", self.toggle_edit, self.st.get("edit_mode"))
+        add("Додати тестовий віджет", self.add_demo)
+        add("Зібрати всі віджети на екран", self.gather)
         add("Налаштування…", self.open_settings)
         m.addSeparator()
         add("Запускати разом із Windows",
@@ -92,8 +105,48 @@ class App(QObject):
     def toggle_edit(self):
         self.st["edit_mode"] = not self.st.get("edit_mode")
         self.save()
-        self.notify("Режим редагування", "Увімкнено. Самі віджети з'являться на наступному етапі."
-                    if self.st["edit_mode"] else "Вимкнено.")
+        for h in self.hosts:
+            h.update()
+        if self.st["edit_mode"]:
+            self.notify("Режим редагування", "Увімкнено: тягни віджети мишкою. Вимкни тут же, коли розставиш.")
+
+    # ---------------- віджети ----------------
+    def _add_host(self, wd):
+        h = WidgetHost(wd, self)
+        h.changed.connect(self.save)
+        h.show()
+        self.hosts.append(h)
+
+    def add_demo(self):
+        wd = demo_widget()
+        n = len(self.widgets)
+        wd.x, wd.y = 90 + 40 * (n % 8), 90 + 40 * (n % 8)
+        self.clamp_to_screen(wd)
+        self.widgets.append(wd)
+        self._add_host(wd)
+        self.save()
+
+    def clamp_to_screen(self, wd):
+        """Віджет не може опинитись за краєм екрана (урок: «панель зникла»)."""
+        g = None
+        for scr in self.qapp.screens():
+            a = scr.availableGeometry()
+            if a.intersects(a.__class__(wd.x, wd.y, wd.w, wd.h)):
+                g = a
+                break
+        if g is None:
+            g = self.qapp.primaryScreen().availableGeometry()
+        keep = 40                                        # щонайменше стільки віджета має бути видно
+        wd.x = max(g.left() - wd.w + keep, min(g.right() - keep, wd.x))
+        wd.y = max(g.top(), min(g.bottom() - keep, wd.y))
+
+    def gather(self):
+        g = self.qapp.primaryScreen().availableGeometry()
+        for i, h in enumerate(self.hosts):
+            h.wd.x, h.wd.y = g.left() + 60 + 36 * (i % 10), g.top() + 60 + 36 * (i % 10)
+            h.sync()
+            h.keep_bottom()
+        self.save()
 
     def notify(self, title, text):
         self.tray.showMessage(title, text, QSystemTrayIcon.MessageIcon.Information, 4000)
@@ -116,6 +169,7 @@ class App(QObject):
         self.clock.set_paused(bool(self.st.get("pause_fullscreen")) and platform_win.fullscreen_app_active())
 
     def save(self):
+        self.st["widgets"] = [w.to_dict() for w in self.widgets]
         if not config.save(self.st):
             log.write("не вдалося зберегти налаштування")
 
@@ -166,6 +220,8 @@ class App(QObject):
 
     def quit(self):
         self.save()
+        for h in self.hosts:
+            h.close()
         self.tray.hide()
         self.qapp.quit()
 
