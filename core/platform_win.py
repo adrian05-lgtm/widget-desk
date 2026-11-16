@@ -176,3 +176,60 @@ def set_autostart(on):
 def open_folder(path):
     if IS_WIN:
         os.startfile(str(path))
+
+
+# ---------------- шпалери Windows (для розмитого «скла») ----------------
+def wallpaper_info():
+    """(шлях до файла шпалер, режим: fill / fit / stretch). Порожній шлях, якщо не вдалося."""
+    if not IS_WIN:
+        return "", "fill"
+    buf = ctypes.create_unicode_buffer(520)
+    try:
+        ctypes.windll.user32.SystemParametersInfoW(0x0073, 520, buf, 0)      # SPI_GETDESKWALLPAPER
+    except Exception:
+        return "", "fill"
+    mode = "fill"
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Control Panel\Desktop") as k:
+            style = str(winreg.QueryValueEx(k, "WallpaperStyle")[0])
+        mode = {"2": "stretch", "6": "fit"}.get(style, "fill")
+    except OSError:
+        pass
+    return buf.value, mode
+
+
+# ---------------- гаряча клавіша на весь Windows ----------------
+from PyQt6.QtCore import QObject, pyqtSignal  # noqa: E402
+
+
+class GlobalHotkey(QObject):
+    """RegisterHotKey у власному потоці. bindings: {"назва": ("ctrl+shift", код_клавіші)}"""
+    pressed = pyqtSignal(str)
+    MOD = {"alt": 0x0001, "ctrl": 0x0002, "shift": 0x0004, "win": 0x0008}
+
+    def __init__(self, bindings):
+        super().__init__()
+        self.bindings = bindings
+        self.failed = []
+        if IS_WIN:
+            import threading
+            threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self):
+        from ctypes import wintypes as wt
+        user32 = ctypes.windll.user32
+        names = list(self.bindings)
+        for i, name in enumerate(names, start=1):
+            mods_s, vk = self.bindings[name]
+            mods = 0x4000                                   # без автоповтору
+            for m in mods_s.split("+"):
+                mods |= self.MOD.get(m.strip().lower(), 0)
+            if not user32.RegisterHotKey(None, i, mods, vk):
+                self.failed.append(name)
+        msg = wt.MSG()
+        while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+            if msg.message == 0x0312:
+                idx = int(msg.wParam) - 1
+                if 0 <= idx < len(names):
+                    self.pressed.emit(names[idx])

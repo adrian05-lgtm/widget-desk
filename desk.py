@@ -25,6 +25,7 @@ from core.updater import Updater, install_and_restart, is_frozen
 from ui import theme
 from model.widget import Widget, demo_widget
 from ui.app_windows import SettingsWindow, UpdateDialog
+from render.backdrop import Backdrop
 from ui.host import WidgetHost
 
 SERVER_NAME = "WidgetDesk_single_instance"
@@ -44,6 +45,9 @@ class App(QObject):
         self.upd_url = ""
 
         self.hosts = []
+        self.undo_stack = []
+        self.backdrop = Backdrop()
+        self.backdrop.refresh(qapp.primaryScreen().geometry())
         self.widgets = [Widget(d) for d in self.st.get("widgets", []) if isinstance(d, dict)]
         if not self.widgets and not self.st.get("seen_demo"):
             self.widgets.append(demo_widget())           # перший запуск: один віджет для прикладу
@@ -65,6 +69,16 @@ class App(QObject):
         self.watch = QTimer(self)                       # раз на секунду: чи не пора на паузу
         self.watch.timeout.connect(self.check_pause)
         self.watch.start(1000)
+        self.wall_watch = QTimer(self)                  # раз на 5 с: чи не змінились шпалери / екран
+        self.wall_watch.timeout.connect(self.check_wallpaper)
+        self.wall_watch.start(5000)
+        qapp.primaryScreen().geometryChanged.connect(lambda *_: self.screen_changed())
+        qapp.screenAdded.connect(lambda *_: self.screen_changed())
+        qapp.screenRemoved.connect(lambda *_: self.screen_changed())
+
+        self.hotkey = platform_win.GlobalHotkey({"edit": ("ctrl+alt", 0x45)})      # Ctrl+Alt+E
+        self.hotkey.pressed.connect(lambda name: self.toggle_edit() if name == "edit" else None)
+        self.restack()
 
         self.updater = Updater()
         self.updater.available.connect(self.on_update_available)
@@ -90,8 +104,10 @@ class App(QObject):
             a.triggered.connect(lambda _=False: fn())
             m.addAction(a)
 
-        add("Режим редагування (рухати віджети)", self.toggle_edit, self.st.get("edit_mode"))
+        add("Режим редагування  (Ctrl+Alt+E)", self.toggle_edit, self.st.get("edit_mode"))
         add("Додати тестовий віджет", self.add_demo)
+        if self.can_undo():
+            add("Повернути останню дію", self.undo)
         add("Зібрати всі віджети на екран", self.gather)
         add("Налаштування…", self.open_settings)
         m.addSeparator()
@@ -113,39 +129,147 @@ class App(QObject):
     # ---------------- віджети ----------------
     def _add_host(self, wd):
         h = WidgetHost(wd, self)
-        h.changed.connect(self.save)
         h.show()
         self.hosts.append(h)
 
+    def host_of(self, wd):
+        return next((h for h in self.hosts if h.wd is wd), None)
+
+    def rebuild_hosts(self):
+        for h in self.hosts:
+            h.close()
+            h.deleteLater()
+        self.hosts = []
+        for wd in self.widgets:
+            self._add_host(wd)
+        self.restack()
+
+    def restack(self):
+        """Порядок вікон «на дні»: перший у списку — найнижчий, останній — найвищий."""
+        for h in reversed(self.hosts):
+            if h.isVisible():
+                platform_win.send_to_bottom(int(h.winId()))
+
+    def other_rects(self, wd):
+        return [(o.x, o.y, o.w, o.h) for o in self.widgets if o is not wd]
+
+    def screen_rect(self, wd):
+        g = self._screen_of(wd)
+        return (g.left(), g.top(), g.width(), g.height())
+
+    # --- дії з віджетами (кожна спершу робить знімок для «Повернути») ---
+    def checkpoint(self):
+        self.undo_stack.append([w.to_dict() for w in self.widgets])
+        del self.undo_stack[:-30]
+
+    def can_undo(self):
+        return bool(self.undo_stack)
+
+    def undo(self):
+        if not self.undo_stack:
+            return
+        self.widgets = [Widget(d) for d in self.undo_stack.pop()]
+        self.rebuild_hosts()
+        self.save()
+
     def add_demo(self):
+        self.checkpoint()
         wd = demo_widget()
         n = len(self.widgets)
         wd.x, wd.y = 90 + 40 * (n % 8), 90 + 40 * (n % 8)
         self.clamp_to_screen(wd)
         self.widgets.append(wd)
         self._add_host(wd)
+        self.restack()
         self.save()
+
+    def duplicate(self, wd):
+        self.checkpoint()
+        d = wd.to_dict()
+        d.pop("id")
+        for e in d["elements"]:
+            e.pop("id", None)
+        new = Widget(d)
+        new.x, new.y, new.locked = wd.x + 30, wd.y + 30, False
+        self.clamp_to_screen(new)
+        self.widgets.append(new)
+        self._add_host(new)
+        self.restack()
+        self.save()
+
+    def delete(self, wd):
+        self.checkpoint()
+        h = self.host_of(wd)
+        self.widgets.remove(wd)
+        if h:
+            self.hosts.remove(h)
+            h.close()
+            h.deleteLater()
+        self.save()
+        self.notify("Віджет видалено", "Повернути: права кнопка на віджеті або іконка в треї → «Повернути останню дію».")
+
+    def resize_widget(self, wd, w, h):
+        self.checkpoint()
+        wd.w, wd.h = w, h
+        self.clamp_to_screen(wd)
+        self.host_of(wd).sync()
+        self.save()
+
+    def toggle_lock(self, wd):
+        self.checkpoint()
+        wd.locked = not wd.locked
+        self.host_of(wd).update()
+        self.save()
+
+    def reorder(self, wd, to_front):
+        self.checkpoint()
+        h = self.host_of(wd)
+        self.widgets.remove(wd)
+        self.hosts.remove(h)
+        if to_front:
+            self.widgets.append(wd)
+            self.hosts.append(h)
+        else:
+            self.widgets.insert(0, wd)
+            self.hosts.insert(0, h)
+        self.restack()
+        self.save()
+
+    def _screen_of(self, wd):
+        from PyQt6.QtCore import QRect
+        r = QRect(wd.x, wd.y, wd.w, wd.h)
+        for scr in self.qapp.screens():
+            if scr.availableGeometry().intersects(r):
+                return scr.availableGeometry()
+        return self.qapp.primaryScreen().availableGeometry()
+
+    def check_wallpaper(self):
+        if self.backdrop.refresh(self.qapp.primaryScreen().geometry()):
+            for h in self.hosts:
+                h.update()
+
+    def screen_changed(self):
+        """Змінилась роздільність або кількість моніторів — нічого не має лишитись за екраном."""
+        self.check_wallpaper()
+        for h in self.hosts:
+            self.clamp_to_screen(h.wd)
+            h.sync()
+        self.restack()
 
     def clamp_to_screen(self, wd):
         """Віджет не може опинитись за краєм екрана (урок: «панель зникла»)."""
-        g = None
-        for scr in self.qapp.screens():
-            a = scr.availableGeometry()
-            if a.intersects(a.__class__(wd.x, wd.y, wd.w, wd.h)):
-                g = a
-                break
-        if g is None:
-            g = self.qapp.primaryScreen().availableGeometry()
+        g = self._screen_of(wd)
         keep = 40                                        # щонайменше стільки віджета має бути видно
         wd.x = max(g.left() - wd.w + keep, min(g.right() - keep, wd.x))
         wd.y = max(g.top(), min(g.bottom() - keep, wd.y))
 
     def gather(self):
         g = self.qapp.primaryScreen().availableGeometry()
+        self.checkpoint()
         for i, h in enumerate(self.hosts):
             h.wd.x, h.wd.y = g.left() + 60 + 36 * (i % 10), g.top() + 60 + 36 * (i % 10)
             h.sync()
-            h.keep_bottom()
+        self.restack()
         self.save()
 
     def notify(self, title, text):

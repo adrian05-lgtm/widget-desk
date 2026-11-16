@@ -17,7 +17,7 @@ APP_DIR = Path(os.environ.get("APPDATA") or (Path.home() / ".config")) / APP_NAM
 SETTINGS_FILE = APP_DIR / "settings.json"
 LOG_FILE = APP_DIR / "log.txt"
 
-SCHEMA = 1
+SCHEMA = 2
 
 DEFAULTS = {
     "schema": SCHEMA,
@@ -27,12 +27,22 @@ DEFAULTS = {
     "eco": False,              # економний режим (менше анімацій)
     "pause_fullscreen": True,  # пауза анімацій, коли гра на весь екран
     "edit_mode": False,
+    "grid": 10,                # крок сітки для прилипання (1 = без сітки)
     "seen_demo": False,        # стартовий віджет уже показували
     "widgets": [],             # список віджетів (з етапу 2)
 }
 
+def _m1(data):
+    """1 → 2: з'явилось розмите скло; старий майже непрозорий колір скла робимо прозорішим."""
+    for w in data.get("widgets") or []:
+        pr = w.get("props") if isinstance(w, dict) else None
+        if isinstance(pr, dict) and pr.get("color") == "#d912141f":
+            pr["color"] = "#9912141f"
+    return data
+
+
 # MIGRATIONS[n] перетворює дані схеми n у схему n+1
-MIGRATIONS = {}
+MIGRATIONS = {1: _m1}
 
 
 def ensure_dir():
