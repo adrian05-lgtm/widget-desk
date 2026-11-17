@@ -51,5 +51,24 @@ if __name__ == "__main__":
                     {"type": "shape", "props": {"shape": "rect", "ax": "stretch", "ay": "bottom", "x": 16, "y": 70,
                                                 "h": 6, "radius": 3, "fill": "#22000000", "w": "зламано"}},
                 ]})
-    render([a, b, c], sys.argv[1] if len(sys.argv) > 1 else "render_test.png")
+    d = Widget({"x": 420, "y": 320, "w": 560, "h": 170, "props": {"bg": "solid", "color": "#e60a0a0c", "radius": 16,
+                                                                     "border_color": "#88b3122e"},
+                "elements": [
+                    {"type": "progress", "props": {"x": 24, "y": 28, "w": 300, "h": 20, "value": 65}},
+                    {"type": "progress", "props": {"x": 24, "y": 64, "w": 300, "h": 20, "value": 30, "track": 4,
+                                                   "gradient": True, "fill": "#ff3ec6ff", "knob_shape": "bar",
+                                                   "knob_size": 16}},
+                    {"type": "progress", "props": {"x": 24, "y": 100, "w": 300, "h": 20, "source": "minute",
+                                                   "fill": "#ffb3122e", "knob": False, "track": 8}},
+                    {"type": "progress", "props": {"x": 350, "y": 20, "w": 20, "h": 130, "orient": "v",
+                                                   "value": 75, "knob_shape": "square"}},
+                    {"type": "button", "props": {"x": 390, "y": 24, "w": 150, "h": 40, "icon": "play",
+                                                 "text": "Грати"}},
+                    {"type": "button", "props": {"x": 390, "y": 76, "w": 150, "h": 40, "text": "Скляна",
+                                                 "bg": "#26ffffff", "border": 1, "radius": 999}},
+                    {"type": "button", "props": {"x": 390, "y": 126, "w": 40, "h": 32, "text": "", "icon": "heart",
+                                                 "bg": "#ffb3122e", "radius": 999, "icon_size": 16}},
+                ]})
+    d.elements[5].state = "hover"
+    render([a, b, c, d], sys.argv[1] if len(sys.argv) > 1 else "render_test.png")
     print("elements in c:", len(c.elements), "| round-trip equal:", Widget(c.to_dict()).to_dict() == c.to_dict())

@@ -5,22 +5,29 @@ import uuid
 from core.props import Prop, clean
 from model import element
 
+def _pos(v):
+    return (v or 0) > 0
+
+
 CARD = [
     Prop("bg", "Фон", "choice", "glass", "Фон",
-         choices=[("glass", "Скло"), ("solid", "Колір"), ("gradient", "Градієнт"), ("image", "Картинка"),
-                  ("none", "Без фону")]),
-    Prop("color", "Колір фону", "color", "#9912141f", "Фон"),
-    Prop("blur", "Розмиття скла", "int", 24, "Фон", 0, 40),
-    Prop("color2", "Другий колір (градієнт)", "color", "#d93a1f5c", "Фон"),
-    Prop("angle", "Кут градієнта, °", "int", 90, "Фон", 0, 360),
-    Prop("image", "Картинка фону", "image", "", "Фон"),
-    Prop("image_dim", "Затемнення картинки, %", "int", 20, "Фон", 0, 100),
+         choices=[("glass", "Скло (розмиті шпалери)"), ("solid", "Колір"), ("gradient", "Градієнт"),
+                  ("image", "Картинка"), ("none", "Без фону")]),
+    Prop("color", "Колір фону", "color", "#9912141f", "Фон", show_if={"bg": ("glass", "solid", "gradient")},
+         hint="Для скла — це відтінок поверх розмитих шпалер; чим прозоріший, тим більше видно шпалери."),
+    Prop("blur", "Розмиття скла", "int", 24, "Фон", 0, 40, show_if={"bg": ("glass",)}),
+    Prop("color2", "Другий колір", "color", "#d93a1f5c", "Фон", show_if={"bg": ("gradient",)}),
+    Prop("angle", "Кут градієнта, °", "int", 90, "Фон", 0, 360, show_if={"bg": ("gradient",)}),
+    Prop("image", "Картинка фону", "image", "", "Фон", show_if={"bg": ("image",)}),
+    Prop("image_dim", "Затемнення картинки, %", "int", 20, "Фон", 0, 100, show_if={"bg": ("image",)}),
     Prop("radius", "Заокруглення кутів", "int", 22, "Форма", 0, 400),
-    Prop("border", "Товщина рамки", "int", 1, "Рамка", 0, 30),
-    Prop("border_color", "Колір рамки", "color", "#3cffffff", "Рамка"),
-    Prop("shadow", "Розмір тіні", "int", 18, "Тінь", 0, 60),
-    Prop("shadow_alpha", "Сила тіні, %", "int", 45, "Тінь", 0, 100),
-    Prop("opacity", "Прозорість віджета, %", "int", 100, "Вигляд", 5, 100),
+    Prop("border", "Товщина рамки", "int", 1, "Рамка", 0, 30, show_if={"bg": lambda v: v != "none"}),
+    Prop("border_color", "Колір рамки", "color", "#3cffffff", "Рамка",
+         show_if={"border": _pos, "bg": lambda v: v != "none"}),
+    Prop("shadow", "Розмір тіні", "int", 18, "Тінь", 0, 60, show_if={"bg": lambda v: v != "none"}),
+    Prop("shadow_alpha", "Сила тіні, %", "int", 45, "Тінь", 0, 100,
+         show_if={"shadow": _pos, "bg": lambda v: v != "none"}),
+    Prop("opacity", "Непрозорість віджета, %", "int", 100, "Вигляд", 5, 100),
 ]
 
 MIN_W, MIN_H = 40, 30
@@ -56,6 +63,11 @@ class Widget:
             seen.add(el.id)
             self.elements.append(el)
 
+    def assign(self, data):
+        """Замінити весь вміст віджета даними (для «Скасувати» і «Повернути»). Об'єкт лишається той самий,
+        тому вікно на робочому столі продовжує на нього посилатися."""
+        self.__init__(data)
+
     def to_dict(self):
         return {"id": self.id, "name": self.name, "x": self.x, "y": self.y, "w": self.w, "h": self.h,
                 "locked": self.locked, "props": dict(self.p),
@@ -85,3 +97,11 @@ def demo_widget():
                                                          "color": "#b4ffffff"}},
         ],
     })
+
+
+def empty_widget():
+    """Порожня картка для нового віджета — далі все налаштовується в редакторі."""
+    return Widget({"name": "Новий віджет", "x": 120, "y": 120, "w": 340, "h": 170,
+                   "elements": [{"type": "text", "name": "Заголовок",
+                                 "props": {"text": "Новий віджет", "x": 22, "y": 20, "w": 296, "h": 34,
+                                           "size": 24, "bold": True}}]})

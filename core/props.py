@@ -8,11 +8,21 @@ from PyQt6.QtGui import QColor
 
 class Prop:
     def __init__(self, key, label, kind, default, group="Загальне", lo=None, hi=None, step=1,
-                 choices=None, hint=""):
+                 choices=None, hint="", show_if=None):
         self.key, self.label, self.kind, self.default = key, label, kind, default
         self.group, self.lo, self.hi, self.step = group, lo, hi, step
         self.choices = choices or []          # [(значення, назва), ...]
         self.hint = hint
+        # show_if: {"інший_ключ": (дозволені значення) або функція(значення) -> bool}
+        # Наприклад, «Другий колір» показуємо лише коли увімкнено градієнт.
+        self.show_if = show_if or {}
+
+    def shown(self, values):
+        for k, cond in self.show_if.items():
+            v = values.get(k)
+            if not (cond(v) if callable(cond) else v in cond):
+                return False
+        return True
 
     def clean(self, v):
         """Привести будь-що до правильного значення; якщо не виходить — типове."""

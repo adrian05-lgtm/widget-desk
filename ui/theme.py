@@ -33,6 +33,35 @@ QMenu::item:selected {{ background: {ACCENT}; color: white; }}
 QMenu::separator {{ height: 1px; background: {LINE}; margin: 5px 8px; }}
 QToolTip {{ background: {CARD}; color: {TEXT}; border: 1px solid {LINE}; border-radius: 6px; padding: 4px 8px; }}
 QMessageBox {{ background: {BG}; }}
+QLabel#section {{ font-weight: 600; color: {MUTED}; padding: 0 0 4px 2px; }}
+QWidget#panel {{ background: transparent; }}
+QScrollArea {{ background: transparent; border: none; }}
+QScrollArea > QWidget > QWidget {{ background: transparent; }}
+QToolButton {{ background: {CARD}; border: 1px solid {LINE}; border-radius: 7px; padding: 5px 9px; }}
+QToolButton:hover {{ border-color: {ACCENT}; }}
+QToolButton:checked {{ background: {ACCENT}; border-color: {ACCENT}; color: white; }}
+QToolButton::menu-indicator {{ image: none; width: 0; }}
+QToolButton#group {{ background: transparent; border: none; font-weight: 600; font-size: 10.5pt;
+                     padding: 8px 2px 4px 0; text-align: left; color: {TEXT}; }}
+QToolButton#group:checked {{ background: transparent; color: {TEXT}; }}
+QPushButton#swatch {{ text-align: left; padding: 5px 10px; font-family: Consolas, 'Segoe UI'; }}
+QLineEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox {{ background: {BG}; border: 1px solid {LINE};
+                     border-radius: 7px; padding: 4px 8px; selection-background-color: {ACCENT}; }}
+QLineEdit:focus, QPlainTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {{ border-color: {ACCENT}; }}
+QSpinBox::up-button, QSpinBox::down-button, QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{ width: 16px; }}
+QSlider::groove:horizontal {{ height: 4px; background: {LINE}; border-radius: 2px; }}
+QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 2px; }}
+QSlider::handle:horizontal {{ background: white; width: 14px; height: 14px; margin: -5px 0; border-radius: 7px; }}
+QListWidget {{ background: {BG}; border: 1px solid {LINE}; border-radius: 8px; padding: 4px; outline: none; }}
+QListWidget::item {{ padding: 6px 6px; border-radius: 6px; }}
+QListWidget::item:selected {{ background: {ACCENT}; color: white; }}
+QListWidget::item:hover:!selected {{ background: {LINE}; }}
+QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
+QScrollBar::handle:vertical {{ background: {LINE}; border-radius: 4px; min-height: 30px; }}
+QScrollBar::handle:vertical:hover {{ background: {ACCENT}; }}
+QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
+QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
+QColorDialog, QFileDialog, QInputDialog {{ background: {BG}; }}
 """
 
 

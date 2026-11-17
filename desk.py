@@ -23,10 +23,11 @@ from core import config, log, platform_win
 from core.clock import FrameClock
 from core.updater import Updater, install_and_restart, is_frozen
 from ui import theme
-from model.widget import Widget, demo_widget
+from model.widget import Widget, demo_widget, empty_widget
 from ui.app_windows import SettingsWindow, UpdateDialog
 from render.backdrop import Backdrop
 from ui.host import WidgetHost
+from ui.inspector import Inspector
 
 SERVER_NAME = "WidgetDesk_single_instance"
 
@@ -46,6 +47,8 @@ class App(QObject):
 
         self.hosts = []
         self.undo_stack = []
+        self.inspector = None                            # відкритий редактор вигляду (один на всю програму)
+        self.style_clip = None                           # скопійований стиль (вид, значення)
         self.backdrop = Backdrop()
         self.backdrop.refresh(qapp.primaryScreen().geometry())
         self.widgets = [Widget(d) for d in self.st.get("widgets", []) if isinstance(d, dict)]
@@ -104,9 +107,10 @@ class App(QObject):
             a.triggered.connect(lambda _=False: fn())
             m.addAction(a)
 
+        add("Новий віджет…", self.new_widget)
         add("Режим редагування  (Ctrl+Alt+E)", self.toggle_edit, self.st.get("edit_mode"))
-        add("Додати тестовий віджет", self.add_demo)
-        if self.can_undo():
+        add("Додати приклад (годинник)", self.add_demo)
+        if self.can_undo() and self.inspector is None:
             add("Повернути останню дію", self.undo)
         add("Зібрати всі віджети на екран", self.gather)
         add("Налаштування…", self.open_settings)
@@ -166,6 +170,9 @@ class App(QObject):
         return bool(self.undo_stack)
 
     def undo(self):
+        if self.inspector is not None:
+            self.notify("Спершу закрий редактор", "Поки відкритий редактор вигляду, крок назад — Ctrl+Z у ньому.")
+            return
         if not self.undo_stack:
             return
         self.widgets = [Widget(d) for d in self.undo_stack.pop()]
@@ -198,6 +205,8 @@ class App(QObject):
         self.save()
 
     def delete(self, wd):
+        if self.inspector is not None and self.inspector.wd is wd and not self.inspector.try_close():
+            return
         self.checkpoint()
         h = self.host_of(wd)
         self.widgets.remove(wd)
@@ -234,6 +243,56 @@ class App(QObject):
             self.hosts.insert(0, h)
         self.restack()
         self.save()
+
+    # --- редактор вигляду ---
+    def new_widget(self):
+        if self.inspector is not None and not self.inspector.try_close():
+            return                                       # спершу розібратись із незбереженим у редакторі
+        self.checkpoint()
+        wd = empty_widget()
+        g = self.qapp.primaryScreen().availableGeometry()
+        n = len(self.widgets)
+        wd.x, wd.y = g.left() + 120 + 30 * (n % 8), g.top() + 120 + 30 * (n % 8)
+        self.clamp_to_screen(wd)
+        self.widgets.append(wd)
+        self._add_host(wd)
+        self.restack()
+        self.save()
+        self.open_inspector(wd)
+
+    def open_inspector(self, wd):
+        if self.inspector is not None:
+            if self.inspector.wd is wd:
+                self.inspector.raise_()
+                self.inspector.activateWindow()
+                return
+            if not self.inspector.try_close():               # спитає про незбережене в іншому віджеті
+                return
+        self.inspector = Inspector(self, wd)
+        self.inspector.closed.connect(self._inspector_closed)
+        self.inspector.show()
+        self.inspector.raise_()
+        self.inspector.activateWindow()
+        self.host_of(wd).update()
+
+    def _inspector_closed(self):
+        insp, self.inspector = self.inspector, None
+        h = self.host_of(insp.wd) if insp is not None else None
+        if h is not None:
+            h.update()
+
+    def recent_colors(self):
+        return list(self.st.get("recent_colors") or [])
+
+    def remember_color(self, c):
+        lst = [x for x in self.recent_colors() if x.lower() != c.lower()]
+        self.st["recent_colors"] = [c] + lst[:15]
+
+    def run_action(self, el):
+        """Дія кнопки у віджеті."""
+        if el.p.get("action") == "open" and el.p.get("target", "").strip():
+            if not platform_win.open_target(el.p["target"].strip()):
+                self.notify("Не вдалося відкрити", el.p["target"][:120])
 
     def _screen_of(self, wd):
         from PyQt6.QtCore import QRect
@@ -343,6 +402,8 @@ class App(QObject):
         QTimer.singleShot(300, self.quit)
 
     def quit(self):
+        if self.inspector is not None and not self.inspector.try_close():
+            return                                       # користувач повернувся до редагування
         self.save()
         for h in self.hosts:
             h.close()

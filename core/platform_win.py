@@ -178,6 +178,20 @@ def open_folder(path):
         os.startfile(str(path))
 
 
+def open_target(target):
+    """Відкрити програму, файл, папку або сайт (для кнопок у віджетах). True — якщо вдалося."""
+    try:
+        if target.lower().startswith(("http://", "https://", "www.")):
+            import webbrowser
+            return webbrowser.open(target if "://" in target else "https://" + target)
+        if IS_WIN:
+            os.startfile(os.path.expandvars(target))
+            return True
+        return False
+    except OSError:
+        return False
+
+
 # ---------------- шпалери Windows (для розмитого «скла») ----------------
 def wallpaper_info():
     """(шлях до файла шпалер, режим: fill / fit / stretch). Порожній шлях, якщо не вдалося."""
